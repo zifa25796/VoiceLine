@@ -11,9 +11,8 @@ venv/
 .venv/
 env/
 
-# Data (audio clips + database are user-specific)
-data/clips/
-data/*.db
+# Data — too large for git; generate locally with scripts/seed_library.py
+data/
 
 # IDE
 .vscode/

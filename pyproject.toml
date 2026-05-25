@@ -7,7 +7,7 @@ name = "voice-line"
 version = "0.1.0"
 description = "Person of Interest — The Machine style speech assembler"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 dependencies = [
     "faster-whisper>=1.0.0",
     "pydub>=0.25.0",

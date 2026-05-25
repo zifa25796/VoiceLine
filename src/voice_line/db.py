@@ -1,7 +1,7 @@
+from __future__ import annotations
+
 import sqlite3
 import os
-import hashlib
-from datetime import datetime
 from .config import DB_PATH, CLIPS_DIR, MAX_CLIPS_PER_WORD
 
 

@@ -1,7 +1,6 @@
 """Command-line interface for VoiceLine."""
 
 import argparse
-import sys
 
 from .engine import VoiceLine
 
@@ -52,11 +51,6 @@ def main():
 
     elif args.command == "missing":
         print(vl.stats())
-        top = args.top
-        missing_list = vl.missing(top)
-        print(f"\nTop {top} missing words:")
-        for rank, word in missing_list:
-            print(f"  #{rank:4d}  {word}")
 
     elif args.command == "stats":
         print(vl.stats())

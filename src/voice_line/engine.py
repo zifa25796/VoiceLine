@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import sys
 from pathlib import Path
 
 from . import db
-from .indexer import index_file, index_directory
+from .indexer import index_file, index_files, index_directory
 from .assembler import assemble, assemble_to_file
 from .analyzer import missing_words, coverage_stats, suggest_targets
 
@@ -15,13 +17,17 @@ class VoiceLine:
 
     # ── Indexing ──────────────────────────────────────────────
 
-    def index(self, path: str, progress_callback=None) -> dict:
+    def index(self, path: str, on_progress=None) -> dict:
         """Index a single audio file or directory of audio files."""
         p = Path(path)
         if p.is_dir():
-            return index_directory(str(p), progress_callback)
+            return index_directory(str(p), on_progress=on_progress)
         else:
-            return index_file(str(p), progress_callback)
+            return index_file(str(p))
+
+    def index_batch(self, paths: list[str], on_progress=None) -> dict:
+        """Index multiple audio files with a single model load."""
+        return index_files(paths, on_progress=on_progress)
 
     # ── Speaking ──────────────────────────────────────────────
 

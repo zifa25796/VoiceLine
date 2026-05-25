@@ -1,13 +1,8 @@
 import random
 import numpy as np
 from pydub import AudioSegment
-from pydub.generators import WhiteNoise
 
 from .config import EFFECTS, SAMPLE_RATE
-
-
-def _rng():
-    return random.Random()
 
 
 def pitch_shift(clip: AudioSegment, semitones: float) -> AudioSegment:
@@ -68,30 +63,28 @@ def generate_pop(duration_ms: int = 5, volume_db: float = -18) -> AudioSegment:
 
 def process_word_clip(clip: AudioSegment) -> AudioSegment:
     """Apply random effects to a single word clip."""
-    rng = _rng()
-    semitones = rng.uniform(-EFFECTS["pitch_semitones"], EFFECTS["pitch_semitones"])
+    semitones = random.uniform(-EFFECTS["pitch_semitones"], EFFECTS["pitch_semitones"])
     clip = pitch_shift(clip, semitones)
-    vol = rng.uniform(-EFFECTS["volume_db"], EFFECTS["volume_db"])
+    vol = random.uniform(-EFFECTS["volume_db"], EFFECTS["volume_db"])
     clip = volume_vary(clip, vol)
-    eq_mode = rng.choice(EFFECTS["eq_modes"])
+    eq_mode = random.choice(EFFECTS["eq_modes"])
     clip = apply_eq(clip, eq_mode)
     return clip
 
 
 def create_transition() -> AudioSegment:
     """Create a transition sound between words."""
-    rng = _rng()
     parts = []
 
-    if rng.random() < EFFECTS["static_probability"]:
-        dur = rng.randint(10, 40)
-        parts.append(generate_static(dur, rng.uniform(-35, -25)))
+    if random.random() < EFFECTS["static_probability"]:
+        dur = random.randint(10, 40)
+        parts.append(generate_static(dur, random.uniform(-35, -25)))
 
-    if rng.random() < 0.15:
-        dur = rng.randint(3, 10)
-        parts.append(generate_pop(dur, rng.uniform(-22, -15)))
+    if random.random() < 0.15:
+        dur = random.randint(3, 10)
+        parts.append(generate_pop(dur, random.uniform(-22, -15)))
 
-    silence_ms = rng.randint(EFFECTS["gap_ms"][0], EFFECTS["gap_ms"][1])
+    silence_ms = random.randint(EFFECTS["gap_ms"][0], EFFECTS["gap_ms"][1])
     parts.append(AudioSegment.silent(duration=silence_ms))
 
     if parts:
