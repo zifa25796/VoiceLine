@@ -17,19 +17,26 @@ def init_db() -> None:
     conn = get_connection()
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS words (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            word_text   TEXT    NOT NULL,
-            original_text TEXT  NOT NULL,
-            file_path   TEXT    NOT NULL,
-            source_audio TEXT,
-            start_time  REAL,
-            end_time    REAL,
-            duration    REAL,
-            confidence  REAL,
-            created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            word_text     TEXT    NOT NULL,
+            original_text TEXT    NOT NULL,
+            file_path     TEXT    NOT NULL,
+            source_audio  TEXT,
+            start_time    REAL,
+            end_time      REAL,
+            duration      REAL,
+            confidence    REAL,
+            quality_score REAL    DEFAULT 0.5,
+            created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         CREATE INDEX IF NOT EXISTS idx_words_text ON words(word_text);
     """)
+    conn.commit()
+    # Add quality_score column to existing DBs (migration)
+    try:
+        conn.execute("ALTER TABLE words ADD COLUMN quality_score REAL DEFAULT 0.5")
+    except sqlite3.OperationalError:
+        pass  # column already exists
     conn.commit()
     conn.close()
 
@@ -55,16 +62,17 @@ def make_clip_path(word_text: str, audio_hash: str) -> str:
 
 def add_word(word_text: str, original_text: str, file_path: str,
              source_audio: str, start_time: float, end_time: float,
-             duration: float, confidence: float) -> int | None:
+             duration: float, confidence: float,
+             quality_score: float = 0.5) -> int | None:
     if word_is_full(word_text):
         return None
     conn = get_connection()
     cur = conn.execute(
         """INSERT INTO words (word_text, original_text, file_path, source_audio,
-           start_time, end_time, duration, confidence)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+           start_time, end_time, duration, confidence, quality_score)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (word_text, original_text, file_path, source_audio,
-         start_time, end_time, duration, confidence)
+         start_time, end_time, duration, confidence, quality_score)
     )
     conn.commit()
     row_id = cur.lastrowid
@@ -75,7 +83,8 @@ def add_word(word_text: str, original_text: str, file_path: str,
 def get_clips(word_text: str) -> list[dict]:
     conn = get_connection()
     rows = conn.execute(
-        "SELECT * FROM words WHERE word_text = ? ORDER BY RANDOM()",
+        """SELECT * FROM words WHERE word_text = ?
+           ORDER BY quality_score DESC, RANDOM()""",
         (word_text,)
     ).fetchall()
     conn.close()

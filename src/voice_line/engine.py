@@ -1,81 +1,49 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
 from . import db
-from .indexer import index_file, index_files, index_directory
 from .assembler import assemble, assemble_to_file
 from .analyzer import missing_words, coverage_stats, suggest_targets
 
 
 class VoiceLine:
-    """Main entry point for the VoiceLine TTS system."""
+    """Person of Interest — The Machine style speech assembler."""
 
     def __init__(self):
         db.init_db()
 
-    # ── Indexing ──────────────────────────────────────────────
-
-    def index(self, path: str, on_progress=None) -> dict:
-        """Index a single audio file or directory of audio files."""
-        p = Path(path)
-        if p.is_dir():
-            return index_directory(str(p), on_progress=on_progress)
-        else:
-            return index_file(str(p))
-
-    def index_batch(self, paths: list[str], on_progress=None) -> dict:
-        """Index multiple audio files with a single model load."""
-        return index_files(paths, on_progress=on_progress)
-
     # ── Speaking ──────────────────────────────────────────────
 
-    def speak(self, text: str, output: str | None = None) -> list[str]:
-        """
-        Assemble text into Machine-style audio and play or save it.
-
-        Args:
-            text: The sentence to speak.
-            output: If given, save to this .wav path instead of playing.
-
-        Returns:
-            List of words that were missing from the library.
-        """
-        audio, missing = assemble(text, missing_callback=lambda w: print(
-            f"  [missing] '{w}'", file=sys.stderr
-        ))
+    def speak(self, text: str, output: str | None = None) -> None:
+        """Assemble text into Machine-style speech. Missing words are
+        auto-generated via TTS and saved to the library."""
+        audio = assemble(text)
 
         if output:
             audio.export(output, format="wav")
-            return missing
+            print(f"Saved to {output}", file=sys.stderr)
+        else:
+            self._play(audio)
 
-        self._play(audio)
-        return missing
-
-    def speak_to_file(self, text: str, output_path: str) -> list[str]:
-        """Assemble text and save to file."""
-        return assemble_to_file(text, output_path)
+    def speak_to_file(self, text: str, output_path: str) -> None:
+        assemble_to_file(text, output_path)
 
     # ── Analysis ──────────────────────────────────────────────
 
     def missing(self, top: int = 20) -> list[tuple[int, str]]:
-        """Return top N missing common words."""
         return missing_words(top)
 
     def stats(self) -> str:
-        """Return formatted stats about the word library."""
         return suggest_targets()
 
     def coverage(self) -> dict:
-        """Return coverage statistics."""
         return coverage_stats()
 
     def db_stats(self) -> dict:
-        """Return raw database stats."""
         return db.get_stats()
 
-    # ── Helpers ───────────────────────────────────────────────
+    # ── Playback ──────────────────────────────────────────────
 
     @staticmethod
     def _play(audio) -> None:

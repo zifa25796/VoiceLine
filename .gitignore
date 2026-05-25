@@ -23,5 +23,8 @@ data/
 Thumbs.db
 *.tmp
 
+# Generated audio
+*.wav
+
 # Claude local settings
 .claude/settings.local.json

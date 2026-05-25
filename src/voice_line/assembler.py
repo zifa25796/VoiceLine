@@ -6,14 +6,10 @@ from pydub import AudioSegment
 
 from . import db
 from .effects import process_word_clip, create_transition
-from .config import SAMPLE_RATE, SAMPLE_WIDTH, CHANNELS
+from .config import SAMPLE_RATE, SAMPLE_WIDTH, CHANNELS, EFFECTS
 
 
 def _tokenize(text: str) -> list[tuple[str, str]]:
-    """
-    Split text into (word, separator) pairs.
-    Separator is any whitespace/punctuation between words.
-    """
     tokens = re.findall(r"(\w+(?:'\w+)?)([^\w]*)", text)
     return tokens
 
@@ -22,65 +18,59 @@ def _normalize(word: str) -> str:
     return word.strip().lower()
 
 
-def assemble(text: str, missing_callback=None) -> tuple[AudioSegment, list[str]]:
-    """
-    Build an AudioSegment from text by looking up each word in the library.
+def _get_clip(word: str) -> AudioSegment | None:
+    """Get a processed clip for a word, trying DB first then TTS fallback."""
+    normalized = _normalize(word)
+    if not normalized:
+        return None
 
-    Returns:
-        (audio, missing_words) — combined AudioSegment and list of missing words
-    """
+    # Try existing library
+    clips = db.get_clips(normalized)
+    if clips:
+        chosen = random.choice(clips)
+        clip_path = Path(chosen["file_path"])
+        if clip_path.exists():
+            clip = AudioSegment.from_file(str(clip_path))
+            return process_word_clip(clip)
+
+    # On-the-fly TTS generation
+    from .tts_fallback import ensure_word
+    clip = ensure_word(normalized)
+    if clip is not None:
+        return process_word_clip(clip)
+
+    return None
+
+
+def assemble(text: str) -> AudioSegment:
+    """Build Machine-style audio from text. Missing words are TTS-generated on the fly."""
     tokens = _tokenize(text)
     if not tokens:
-        return AudioSegment.silent(duration=100, frame_rate=SAMPLE_RATE), []
+        return AudioSegment.silent(duration=100, frame_rate=SAMPLE_RATE)
 
     segments: list[AudioSegment] = []
-    missing_words: list[str] = []
 
-    for raw_word, separator in tokens:
-        normalized = _normalize(raw_word)
-        if not normalized:
+    for raw_word, _separator in tokens:
+        clip = _get_clip(raw_word)
+        if clip is None:
             continue
 
-        clips = db.get_clips(normalized)
-
-        if not clips:
-            missing_words.append(normalized)
-            if missing_callback:
-                missing_callback(normalized)
-            silence_ms = max(80, len(raw_word) * 100)  # rough duration guess
-            clip = AudioSegment.silent(duration=silence_ms, frame_rate=SAMPLE_RATE)
-        else:
-            chosen = random.choice(clips)
-            clip_path = chosen["file_path"]
-            if not Path(clip_path).exists():
-                missing_words.append(normalized)
-                if missing_callback:
-                    missing_callback(normalized)
-                silence_ms = max(80, len(raw_word) * 100)
-                clip = AudioSegment.silent(duration=silence_ms, frame_rate=SAMPLE_RATE)
-            else:
-                clip = AudioSegment.from_file(clip_path)
-                clip = process_word_clip(clip)
-
+        fade_in = min(EFFECTS["fade_in_ms"], len(clip) // 10)
+        fade_out = min(EFFECTS["fade_out_ms"], len(clip) // 10)
+        clip = clip.fade_in(fade_in).fade_out(fade_out)
         segments.append(clip)
-
-        transition = create_transition()
-        segments.append(transition)
+        segments.append(create_transition())
 
     if not segments:
-        return AudioSegment.silent(duration=100, frame_rate=SAMPLE_RATE), missing_words
+        return AudioSegment.silent(duration=100, frame_rate=SAMPLE_RATE)
 
     result = segments[0]
     for seg in segments[1:]:
         result += seg
 
-    result = result.set_frame_rate(SAMPLE_RATE).set_channels(CHANNELS).set_sample_width(SAMPLE_WIDTH)
-
-    return result, missing_words
+    return result.set_frame_rate(SAMPLE_RATE).set_channels(CHANNELS).set_sample_width(SAMPLE_WIDTH)
 
 
-def assemble_to_file(text: str, output_path: str, missing_callback=None) -> list[str]:
-    """Assemble text to audio and save to file. Returns list of missing words."""
-    audio, missing = assemble(text, missing_callback)
+def assemble_to_file(text: str, output_path: str) -> None:
+    audio = assemble(text)
     audio.export(output_path, format="wav")
-    return missing

@@ -39,7 +39,7 @@ def generate_static(duration_ms: int, volume_db: float = -30) -> AudioSegment:
     samples_int16 = (samples * 32767).astype(np.int16)
     return AudioSegment(
         samples_int16.tobytes(),
-        frame_width=2,
+        sample_width=2,
         frame_rate=SAMPLE_RATE,
         channels=1
     )
@@ -55,20 +55,39 @@ def generate_pop(duration_ms: int = 5, volume_db: float = -18) -> AudioSegment:
     samples_int16 = (carrier * 32767).astype(np.int16)
     return AudioSegment(
         samples_int16.tobytes(),
-        frame_width=2,
+        sample_width=2,
         frame_rate=SAMPLE_RATE,
         channels=1
     )
 
 
 def process_word_clip(clip: AudioSegment) -> AudioSegment:
-    """Apply random effects to a single word clip."""
-    semitones = random.uniform(-EFFECTS["pitch_semitones"], EFFECTS["pitch_semitones"])
-    clip = pitch_shift(clip, semitones)
-    vol = random.uniform(-EFFECTS["volume_db"], EFFECTS["volume_db"])
-    clip = volume_vary(clip, vol)
+    """Apply random effects to a single word clip.
+
+    Slows down (0.65x–0.85x), applies EQ, volume variation, loudness
+    normalization, and pads with a sliver of silence on each side so the
+    word doesn't crash into the transition.
+    """
+    from math import log10
+
+    factor = random.uniform(*EFFECTS["speed_range"])
+    new_rate = int(clip.frame_rate * factor)
+    clip = clip._spawn(clip.raw_data, overrides={"frame_rate": new_rate})
+
     eq_mode = random.choice(EFFECTS["eq_modes"])
     clip = apply_eq(clip, eq_mode)
+
+    vol = random.uniform(-EFFECTS["volume_db"], EFFECTS["volume_db"])
+    clip = clip + vol
+
+    if clip.max > 0:
+        target = 0.75 * 32767
+        gain_db = 20 * log10(target / clip.max)
+        gain_db += random.uniform(-1.5, 1.5)
+        clip = clip.apply_gain(gain_db)
+
+    pad = 30
+    clip = AudioSegment.silent(duration=pad, frame_rate=clip.frame_rate) + clip
     return clip
 
 
