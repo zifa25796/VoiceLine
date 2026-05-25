@@ -76,8 +76,7 @@ def assemble(text: str) -> AudioSegment:
         intro = AudioSegment.from_file(str(intro_path))
         intro = intro.set_frame_rate(SAMPLE_RATE).set_channels(CHANNELS).set_sample_width(SAMPLE_WIDTH)
         intro = intro + INTRO_VOLUME_DB
-        # Add a short gap between intro and speech
-        gap = AudioSegment.silent(duration=120, frame_rate=SAMPLE_RATE)
+        gap = AudioSegment.silent(duration=60, frame_rate=SAMPLE_RATE)
         return intro + gap + body
 
     return body
