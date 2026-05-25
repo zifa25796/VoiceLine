@@ -72,26 +72,31 @@ def _trim_silence(audio: AudioSegment) -> AudioSegment:
     return audio[int(start * 1000 / sr):int(end * 1000 / sr)]
 
 
-async def generate_word(word: str, voice: str, output_path: str) -> bool:
-    """Use edge-tts to synthesize a single word, trimmed of silence."""
-    try:
-        import edge_tts
-    except ImportError:
-        print("\nERROR: pip install edge-tts")
-        return False
+async def generate_word(word: str, voice: str, output_path: str, retries: int = 3) -> bool:
+    """Use edge-tts to synthesize a single word, with retry on rate-limit."""
+    import edge_tts
 
-    communicate = edge_tts.Communicate(word, voice)
-    with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
-        tmp_path = tmp.name
-    try:
-        await communicate.save(tmp_path)
-        audio = AudioSegment.from_file(tmp_path)
-        audio = audio.set_frame_rate(22050).set_channels(1).set_sample_width(2)
-        audio = _trim_silence(audio)
-        audio.export(output_path, format="wav")
-        return True
-    finally:
-        os.unlink(tmp_path)
+    for attempt in range(retries):
+        try:
+            communicate = edge_tts.Communicate(word, voice)
+            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+                tmp_path = tmp.name
+            try:
+                await communicate.save(tmp_path)
+                audio = AudioSegment.from_file(tmp_path)
+                audio = audio.set_frame_rate(22050).set_channels(1).set_sample_width(2)
+                audio = _trim_silence(audio)
+                audio.export(output_path, format="wav")
+                return True
+            finally:
+                os.unlink(tmp_path)
+        except Exception as e:
+            if attempt < retries - 1:
+                wait = (attempt + 1) * 1.5
+                await asyncio.sleep(wait)
+            else:
+                print(f"\n  ERROR ({word}/{voice}): {e}")
+                return False
     return False
 
 
@@ -119,6 +124,7 @@ async def main_async(top_n: int):
             ).hexdigest()[:12]
             clip_path = db.make_clip_path(word, clip_hash)
 
+            await asyncio.sleep(0.3)  # rate-limit: don't hammer Microsoft
             success = await generate_word(word, voice, clip_path)
             if success:
                 db.add_word(

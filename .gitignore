@@ -11,8 +11,9 @@ venv/
 .venv/
 env/
 
-# Data — too large for git; generate locally with scripts/seed_library.py
+# Data + backups — not for git
 data/
+backups/
 
 # IDE
 .vscode/

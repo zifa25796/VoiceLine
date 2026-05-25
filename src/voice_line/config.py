@@ -8,13 +8,13 @@ DB_PATH = os.path.join(DATA_DIR, "voice_line.db")
 MAX_CLIPS_PER_WORD = 3
 
 EFFECTS = {
-    "volume_db": 2.0,              # max random volume variation ± dB
-    "gap_ms": (160, 350),          # silence gap between words (min, max) ms
-    "static_probability": 0.12,    # chance of static burst between words
+    "volume_db": 2.0,  # max random volume variation ± dB
+    "gap_ms": (160, 350),  # silence gap between words (min, max) ms
+    "static_probability": 0.12,  # chance of static burst between words
     "eq_modes": ["radio", "phone", "clean"],
     "fade_in_ms": 6,
     "fade_out_ms": 8,
-    "speed_range": (0.75, 0.90),   # 1.0=normal, <1.0=slower
+    "speed_range": (0.85, 0.95),  # 1.0=normal, <1.0=slower
 }
 
 SAMPLE_RATE = 22050

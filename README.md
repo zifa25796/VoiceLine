@@ -2,7 +2,9 @@
 
 Person of Interest — The Machine style speech assembler.
 
-Instead of traditional TTS, VoiceLine builds a word-level audio library from **real recordings** (speeches, radio, podcasts) by transcribing them with Whisper and slicing out individual words. When you feed it a sentence, it looks up each word, picks a random clip from a different speaker, applies per-word audio effects (pitch shift, EQ, static), splices them together — producing the signature fragmented "channel-surfing" voice from the show.
+Each word is TTS-synthesized in a different voice, then slowed down,
+EQ'd, and spliced with channel-switching effects — producing the
+signature fragmented "I will find you" voice from the show.
 
 ## Install
 
@@ -10,121 +12,108 @@ Instead of traditional TTS, VoiceLine builds a word-level audio library from **r
 git clone https://github.com/zifa25796/VoiceLine.git
 cd VoiceLine
 pip install -e .
+pip install edge-tts
 ```
 
-pydub needs ffmpeg for non-WAV formats: `winget install ffmpeg` or `brew install ffmpeg`.
+pydub needs ffmpeg: `winget install ffmpeg` or `brew install ffmpeg`.
 
 ## Quick start
 
-VoiceLine needs a **word library** to speak. The library is built by indexing audio files — this database lives locally and is **not** stored in git (it can be gigabytes).
-
-### 1. Seed with open-source data
-
 ```bash
-python scripts/seed_library.py
+# 1. Seed the word library (300 most common words, ~5 min)
+python scripts/seed_tts_library.py
+
+# 2. Speak
+python test_speak.py "can you hear me"
 ```
 
-This downloads [LibriSpeech](https://www.openslr.org/12) dev-clean + test-clean (~680 MB of audio, 40+ speakers, 5400 utterances) and indexes every word with [faster-whisper](https://github.com/SYSTRAN/faster-whisper) base model. Expect **1–2 hours** on CPU for the full run (2703 + 2620 = 5323 files).
-
-### 2. Add your own audio
-
-```bash
-voice-line index broadcast.mp3
-voice-line index ./my_audio_collection/
-```
-
-Any English audio works — speeches, radio recordings, podcasts. Each word gets sliced out, normalized, and stored. **Max 3 clips per word** to keep the library manageable.
-
-### 3. Speak
-
-```bash
-voice-line speak "I will find you"
-voice-line speak -o output.wav "Can you hear me"
-```
+Missing words are auto-generated via edge-tts on first use and cached.
 
 ## Usage
 
-| Command | What it does |
-|---|---|
-| `voice-line speak "text"` | Assemble text into Machine-style speech and play it |
-| `voice-line speak -o out.wav "text"` | Same, but save to file |
-| `voice-line index <path>` | Index an audio file or directory into the word library |
-| `voice-line missing -n 20` | Show the 20 most common English words still missing from the library |
-| `voice-line stats` | Library coverage statistics |
+```bash
+python test_speak.py "I will find you"              # play
+python test_speak.py "hello world" --save out.wav   # save to file
+```
 
-## Python API
+Or via CLI:
 
-```python
-from voice_line import VoiceLine
-
-vl = VoiceLine()
-
-# Index audio into the library
-vl.index("broadcast.mp3")
-vl.index("./audio_collection/")
-
-# Speak
-vl.speak("I will find you")
-vl.speak("Can you hear me", output="output.wav")
-
-# See what common words you're missing
-print(vl.stats())
-print(vl.missing(20))
+```bash
+voice-line speak "I will find you"
+voice-line speak -o out.wav "Can you hear me"
+voice-line stats              # library coverage
+voice-line missing -n 20      # top 20 words not yet in library
 ```
 
 ## How it works
 
 ```
-  OFFLINE — Building the word library
-  ─────────────────────────────────────
-  Audio files  →  Whisper STT   →  Word clips  →  SQLite DB
-  (.mp3/.wav)    (word-level       (.wav per      (word → [clip1, clip2, ...])
-                  timestamps)       word)          max 3 clips / word
+  Seeding (one-time)
+  ──────────────────
+  Word list (frequency order) → edge-tts (14 voices) → WAV clips → SQLite
 
-
-  ONLINE — Speaking
-  ─────────────────
-  Text message  →  Tokenize  →  Lookup each word  →  Effects  →  Concatenate  →  Play
-                               (random clip per
-                                word, silence if
-                                word is missing)
+  Speaking
+  ────────
+  Text → Tokenize → Lookup each word → Effects → Splice → Play
+                     (missing? auto-         (slowdown,
+                      generate + cache)       EQ, static)
 ```
 
-- **Indexing**: faster-whisper transcribes audio with word-level timestamps. Each word is sliced from the source, normalized (lowercase, stripped punctuation), and saved as a 22 kHz mono WAV. Up to 3 clips stored per distinct word.
-- **Assembly**: text is split into tokens. Each word is looked up in the library; a random clip is chosen. Missing words become silence. Every clip gets random per-word effects:
-  - Pitch shift ±3 semitones (different "speaker")
-  - Volume variation ±4 dB
-  - Random EQ mode: phone (300–3400 Hz), radio (200–5000 Hz), or clean
-  - Transition sounds between words: static bursts (30% chance), pops/clicks (15% chance), random 30–150 ms gaps
-- **Analysis**: ~1000 most common English words are built into the package. `voice-line missing` shows which of those are absent from your library — a shopping list for what audio to collect next.
+- **Library**: each word gets up to 3 TTS clips in different voices.
+- **Effects per word**: speed variation (configurable), phone/radio/clean EQ, volume jitter, fade in/out.
+- **Transitions**: random silence gaps + static bursts between words.
+- **Missing words**: generated on the fly via edge-tts and stored for next time.
+
+## Configuration
+
+All tweakable in `src/voice_line/config.py`:
+
+| Setting | Default | What |
+|---|---|---|
+| `speed_range` | `(0.75, 0.85)` | Slower = smaller numbers |
+| `gap_ms` | `(160, 350)` | Silence between words |
+| `static_probability` | `0.12` | Static burst chance |
+| `eq_modes` | `["radio", "phone", "clean"]` | Per-word EQ |
+| `volume_db` | `2.0` | Random volume variation |
+| `MAX_CLIPS_PER_WORD` | `3` | Max clips per word |
+
+## Expanding the library
+
+```bash
+# More common words
+python scripts/seed_tts_library.py --top 1000
+
+# Backup before big changes
+copy data\voice_line.db backups\voice_line_v2.db
+```
 
 ## Project structure
 
 ```
 VoiceLine/
-├── src/voice_line/       # Python package
-│   ├── engine.py         # Main API (VoiceLine class)
-│   ├── indexer.py        # Audio → word library (Whisper STT)
-│   ├── assembler.py      # Text → assembled audio
-│   ├── effects.py        # Per-word audio effects
-│   ├── analyzer.py       # Missing-word analysis
-│   ├── db.py             # SQLite word library
-│   ├── config.py         # Configuration
-│   ├── frequency.py      # ~1000 common English words by frequency
-│   └── cli.py            # Command-line interface
+├── src/voice_line/
+│   ├── engine.py          # Main API
+│   ├── assembler.py       # Text → audio assembly
+│   ├── tts_fallback.py    # On-the-fly TTS for missing words
+│   ├── effects.py         # Audio effects
+│   ├── db.py              # SQLite word library
+│   ├── config.py          # All settings
+│   ├── analyzer.py        # Coverage analysis
+│   ├── frequency.py       # Common word frequency list
+│   └── cli.py             # CLI
+├── test_speak.py          # Quick test script
 ├── scripts/
-│   └── seed_library.py   # Download & index LibriSpeech to bootstrap the library
-├── data/                 # Word clips + database + downloads (gitignored — generate locally)
+│   └── seed_tts_library.py  # Pre-generate TTS word library
+├── data/                  # Clips + DB (gitignored)
+├── backups/               # DB backups (gitignored)
 ├── pyproject.toml
 ├── setup.py
-├── requirements.txt
-└── .gitignore
+└── requirements.txt
 ```
 
 ## Requirements
 
 - Python ≥ 3.9
-- [faster-whisper](https://github.com/SYSTRAN/faster-whisper) — first run downloads the base model (~140 MB) from HuggingFace
-- [pydub](https://github.com/jiaaro/pydub) + ffmpeg (system-level, for MP3/compressed audio)
-- [sounddevice](https://python-sounddevice.readthedocs.io/) — live playback
-- numpy
+- pydub + ffmpeg (system-level)
+- edge-tts (free, no API key)
+- numpy, sounddevice
