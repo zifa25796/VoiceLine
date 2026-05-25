@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "voice-line"
+version = "0.1.0"
+description = "Person of Interest — The Machine style speech assembler"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "faster-whisper>=1.0.0",
+    "pydub>=0.25.0",
+    "sounddevice>=0.4.6",
+    "numpy>=1.24.0",
+]
+
+[project.scripts]
+voice-line = "voice_line.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
