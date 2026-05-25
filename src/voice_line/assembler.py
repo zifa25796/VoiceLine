@@ -6,7 +6,7 @@ from pydub import AudioSegment
 
 from . import db
 from .effects import process_word_clip, create_transition
-from .config import SAMPLE_RATE, SAMPLE_WIDTH, CHANNELS, EFFECTS
+from .config import SAMPLE_RATE, SAMPLE_WIDTH, CHANNELS, EFFECTS, INTRO_PATH, INTRO_VOLUME_DB
 
 
 def _tokenize(text: str) -> list[tuple[str, str]]:
@@ -64,11 +64,23 @@ def assemble(text: str) -> AudioSegment:
     if not segments:
         return AudioSegment.silent(duration=100, frame_rate=SAMPLE_RATE)
 
-    result = segments[0]
+    # Build speech body
+    body = segments[0]
     for seg in segments[1:]:
-        result += seg
+        body += seg
+    body = body.set_frame_rate(SAMPLE_RATE).set_channels(CHANNELS).set_sample_width(SAMPLE_WIDTH)
 
-    return result.set_frame_rate(SAMPLE_RATE).set_channels(CHANNELS).set_sample_width(SAMPLE_WIDTH)
+    # Prepend Machine intro sound
+    intro_path = Path(INTRO_PATH)
+    if intro_path.exists():
+        intro = AudioSegment.from_file(str(intro_path))
+        intro = intro.set_frame_rate(SAMPLE_RATE).set_channels(CHANNELS).set_sample_width(SAMPLE_WIDTH)
+        intro = intro + INTRO_VOLUME_DB
+        # Add a short gap between intro and speech
+        gap = AudioSegment.silent(duration=120, frame_rate=SAMPLE_RATE)
+        return intro + gap + body
+
+    return body
 
 
 def assemble_to_file(text: str, output_path: str) -> None:

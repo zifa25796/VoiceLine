@@ -61,13 +61,22 @@ def generate_pop(duration_ms: int = 5, volume_db: float = -18) -> AudioSegment:
     )
 
 
-def process_word_clip(clip: AudioSegment) -> AudioSegment:
-    """Apply random effects to a single word clip.
+def _noise_floor(duration_ms: int, frame_rate: int) -> AudioSegment:
+    """Generate a low-level background noise track."""
+    db = EFFECTS["noise_floor_db"]
+    samples = np.random.normal(0, 0.3, int(frame_rate * duration_ms / 1000))
+    scale = 10 ** (db / 20)
+    samples_int16 = (samples * scale * 32767).astype(np.int16)
+    return AudioSegment(
+        samples_int16.tobytes(),
+        sample_width=2,
+        frame_rate=frame_rate,
+        channels=1,
+    )
 
-    Slows down (0.65x–0.85x), applies EQ, volume variation, loudness
-    normalization, and pads with a sliver of silence on each side so the
-    word doesn't crash into the transition.
-    """
+
+def process_word_clip(clip: AudioSegment) -> AudioSegment:
+    """Apply effects: speed change, EQ, volume, noise floor, loudness normalisation."""
     from math import log10
 
     factor = random.uniform(*EFFECTS["speed_range"])
@@ -76,6 +85,10 @@ def process_word_clip(clip: AudioSegment) -> AudioSegment:
 
     eq_mode = random.choice(EFFECTS["eq_modes"])
     clip = apply_eq(clip, eq_mode)
+
+    # Low noise floor under the word
+    noise = _noise_floor(len(clip), clip.frame_rate)
+    clip = clip.overlay(noise)
 
     vol = random.uniform(-EFFECTS["volume_db"], EFFECTS["volume_db"])
     clip = clip + vol
@@ -92,23 +105,22 @@ def process_word_clip(clip: AudioSegment) -> AudioSegment:
 
 
 def create_transition() -> AudioSegment:
-    """Create a transition sound between words."""
+    """Create a transition between words: static, pops, silence gap."""
     parts = []
+    vlo, vhi = EFFECTS["static_volume_range"]
 
     if random.random() < EFFECTS["static_probability"]:
-        dur = random.randint(10, 40)
-        parts.append(generate_static(dur, random.uniform(-35, -25)))
+        dur = random.randint(15, 60)
+        parts.append(generate_static(dur, random.uniform(vlo, vhi)))
 
-    if random.random() < 0.15:
-        dur = random.randint(3, 10)
-        parts.append(generate_pop(dur, random.uniform(-22, -15)))
+    if random.random() < 0.25:
+        dur = random.randint(3, 12)
+        parts.append(generate_pop(dur, random.uniform(vhi - 4, vhi + 2)))
 
     silence_ms = random.randint(EFFECTS["gap_ms"][0], EFFECTS["gap_ms"][1])
     parts.append(AudioSegment.silent(duration=silence_ms))
 
-    if parts:
-        result = parts[0]
-        for p in parts[1:]:
-            result = result.overlay(p)
-        return result
-    return AudioSegment.silent(duration=50)
+    result = parts[0]
+    for p in parts[1:]:
+        result = result.overlay(p)
+    return result
