@@ -70,14 +70,19 @@ def assemble(text: str) -> AudioSegment:
         body += seg
     body = body.set_frame_rate(SAMPLE_RATE).set_channels(CHANNELS).set_sample_width(SAMPLE_WIDTH)
 
-    # Prepend Machine intro sound
+    # Machine intro always; outro only for sentences (>=4 words)
+    word_count = len([t for t in tokens if _normalize(t[0])])
     intro_path = Path(INTRO_PATH)
+
     if intro_path.exists():
-        intro = AudioSegment.from_file(str(intro_path))
-        intro = intro.set_frame_rate(SAMPLE_RATE).set_channels(CHANNELS).set_sample_width(SAMPLE_WIDTH)
-        intro = intro + INTRO_VOLUME_DB
+        sfx = AudioSegment.from_file(str(intro_path))
+        sfx = sfx.set_frame_rate(SAMPLE_RATE).set_channels(CHANNELS).set_sample_width(SAMPLE_WIDTH)
+        sfx = sfx + INTRO_VOLUME_DB
         gap = AudioSegment.silent(duration=60, frame_rate=SAMPLE_RATE)
-        return intro + gap + body
+        if word_count >= 4:
+            return sfx + gap + body + gap + sfx
+        else:
+            return sfx + gap + body
 
     return body
 

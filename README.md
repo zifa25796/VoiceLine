@@ -2,9 +2,10 @@
 
 Person of Interest — The Machine style speech assembler.
 
-Each word is TTS-synthesized in a different voice, then slowed down,
-EQ'd, and spliced with channel-switching effects — producing the
-signature fragmented "I will find you" voice from the show.
+Each word is TTS-synthesized in a different voice, then processed with
+speed variation, EQ, noise, and channel-switching effects. Words are
+spliced together with static bursts and silence gaps between them —
+producing the signature fragmented voice from the show.
 
 ## Install
 
@@ -20,70 +21,79 @@ pydub needs ffmpeg: `winget install ffmpeg` or `brew install ffmpeg`.
 ## Quick start
 
 ```bash
-# 1. Seed the word library (300 most common words, ~5 min)
+# 1. Seed the word library (~300 common words, ~10 min)
 python scripts/seed_tts_library.py
 
-# 2. Speak
+# 2. Test
 python test_speak.py "can you hear me"
 ```
 
-Missing words are auto-generated via edge-tts on first use and cached.
+Missing words are auto-generated on first use and cached to the library.
 
 ## Usage
 
 ```bash
-python test_speak.py "I will find you"              # play
-python test_speak.py "hello world" --save out.wav   # save to file
-```
+# Quick test
+python test_speak.py "I will find you"
+python test_speak.py "hello world" --save out.wav
 
-Or via CLI:
-
-```bash
+# CLI
 voice-line speak "I will find you"
 voice-line speak -o out.wav "Can you hear me"
-voice-line stats              # library coverage
-voice-line missing -n 20      # top 20 words not yet in library
+
+# Library
+voice-line stats              # coverage summary
+voice-line missing -n 20      # top 20 words not yet cached
 ```
 
 ## How it works
 
 ```
-  Seeding (one-time)
-  ──────────────────
-  Word list (frequency order) → edge-tts (14 voices) → WAV clips → SQLite
+  Setup (one-time)
+  ────────────────
+  Frequency word list → edge-tts (14 voices) → WAV clips → SQLite
 
   Speaking
   ────────
   Text → Tokenize → Lookup each word → Effects → Splice → Play
-                     (missing? auto-         (slowdown,
-                      generate + cache)       EQ, static)
+                     (missing? auto-         (speed, EQ,
+                      generate + cache)       noise floor,
+                                              fades)
+
+  Sentence flow
+  ─────────────
+  [intro SFX] → word → gap/static → word → gap/static → ... → [outro SFX]
+                ↑ always                         ↑ only for ≥4 words
 ```
 
-- **Library**: each word gets up to 3 TTS clips in different voices.
-- **Effects per word**: speed variation (configurable), phone/radio/clean EQ, volume jitter, fade in/out.
-- **Transitions**: random silence gaps + static bursts between words.
-- **Missing words**: generated on the fly via edge-tts and stored for next time.
+- **Library**: each word gets up to 3 TTS clips in different edge-tts voices.
+- **Effects per word**: speed variation, phone/radio/clean EQ, low noise floor, volume jitter, fade in/out.
+- **Transitions**: silence gaps (160–350ms) + random static bursts between words.
+- **Intro/outro**: The Machine SFX (`data/assets/machine_intro.wav`) plays at start of every output; appended at end for sentences of 4+ words.
 
 ## Configuration
 
-All tweakable in `src/voice_line/config.py`:
+All settings in `src/voice_line/config.py`:
 
-| Setting | Default | What |
+| Setting | Default | Description |
 |---|---|---|
-| `speed_range` | `(0.75, 0.85)` | Slower = smaller numbers |
-| `gap_ms` | `(160, 350)` | Silence between words |
-| `static_probability` | `0.12` | Static burst chance |
-| `eq_modes` | `["radio", "phone", "clean"]` | Per-word EQ |
-| `volume_db` | `2.0` | Random volume variation |
-| `MAX_CLIPS_PER_WORD` | `3` | Max clips per word |
+| `speed_range` | `(1.05, 1.25)` | Word speed; `<1.0` = slower, `>1.0` = faster |
+| `gap_ms` | `(160, 350)` | Silence between words (min, max) in ms |
+| `static_probability` | `0.25` | Chance of static burst per word transition |
+| `static_volume_range` | `(-28, -15)` | Static loudness in dB (higher = louder) |
+| `noise_floor_db` | `-32` | Background noise under each word (`-40`=subtle, `-20`=obvious) |
+| `volume_db` | `2.0` | Random volume variation ±dB |
+| `eq_modes` | `["radio", "phone", "clean"]` | EQ randomly chosen per word |
+| `MAX_CLIPS_PER_WORD` | `3` | Max clips stored per word |
+| `INTRO_VOLUME_DB` | `-8` | Intro SFX attenuation (more negative = quieter) |
 
 ## Expanding the library
 
 ```bash
-# More common words
+# More common words (up to ~1000)
 python scripts/seed_tts_library.py --top 1000
 
-# Backup before big changes
+# Backup before major changes
 copy data\voice_line.db backups\voice_line_v2.db
 ```
 
@@ -91,21 +101,23 @@ copy data\voice_line.db backups\voice_line_v2.db
 
 ```
 VoiceLine/
-├── src/voice_line/
-│   ├── engine.py          # Main API
-│   ├── assembler.py       # Text → audio assembly
-│   ├── tts_fallback.py    # On-the-fly TTS for missing words
-│   ├── effects.py         # Audio effects
-│   ├── db.py              # SQLite word library
-│   ├── config.py          # All settings
-│   ├── analyzer.py        # Coverage analysis
-│   ├── frequency.py       # Common word frequency list
-│   └── cli.py             # CLI
-├── test_speak.py          # Quick test script
+├── test_speak.py              # Quick test script
+├── src/voice_line/            # Python package
+│   ├── engine.py              # Main API
+│   ├── assembler.py           # Text → assembled audio
+│   ├── tts_fallback.py        # On-the-fly TTS for missing words
+│   ├── effects.py             # Audio effects (speed, EQ, noise, transitions)
+│   ├── db.py                  # SQLite word library
+│   ├── config.py              # All tunable settings
+│   ├── analyzer.py            # Coverage analysis
+│   ├── frequency.py           # Common word frequency list
+│   └── cli.py                 # CLI entry point
 ├── scripts/
-│   └── seed_tts_library.py  # Pre-generate TTS word library
-├── data/                  # Clips + DB (gitignored)
-├── backups/               # DB backups (gitignored)
+│   └── seed_tts_library.py    # Pre-generate TTS word library
+├── data/                      # Clips + DB + SFX (gitignored)
+│   └── assets/
+│       └── machine_intro.wav  # Machine intro sound effect
+├── backups/                   # DB backups (gitignored)
 ├── pyproject.toml
 ├── setup.py
 └── requirements.txt
@@ -114,6 +126,6 @@ VoiceLine/
 ## Requirements
 
 - Python ≥ 3.9
-- pydub + ffmpeg (system-level)
-- edge-tts (free, no API key)
+- pydub + ffmpeg (system-level, for audio I/O)
+- edge-tts (free, no API key required)
 - numpy, sounddevice
