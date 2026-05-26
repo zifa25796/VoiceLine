@@ -47,17 +47,28 @@ class VoiceLine:
 
     @staticmethod
     def _play(audio) -> None:
-        try:
-            import sounddevice as sd
-            import numpy as np
-        except ImportError:
-            print("Install sounddevice to play audio: pip install sounddevice", file=sys.stderr)
-            return
+        import tempfile
+        import subprocess
+        import os
 
-        samples = np.array(audio.get_array_of_samples(), dtype=np.float64)
-        if audio.channels > 1:
-            samples = samples.reshape((-1, audio.channels))
-        max_val = float(2 ** (audio.sample_width * 8 - 1))
-        samples = samples / max_val
-        sd.play(samples.astype(np.float32), samplerate=audio.frame_rate)
-        sd.wait()
+        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+        tmp_path = tmp.name
+        tmp.close()
+        try:
+            audio.export(tmp_path, format="wav")
+            # Use PowerShell Media.SoundPlayer to play (works headless)
+            ps = (
+                f"(New-Object Media.SoundPlayer '{tmp_path}').PlaySync();"
+                f"Remove-Item '{tmp_path}'"
+            )
+            subprocess.run(
+                ["powershell", "-Command", ps],
+                capture_output=True, timeout=30,
+            )
+        except Exception:
+            pass
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
