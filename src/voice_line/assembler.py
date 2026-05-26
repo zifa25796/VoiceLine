@@ -17,14 +17,48 @@ from .config import SAMPLE_RATE, SAMPLE_WIDTH, CHANNELS, EFFECTS, INTRO_PATH, IN
 
 
 def _tokenize(text: str) -> list[tuple[str, str]]:
-    """分词：返回 [(单词, 分隔符), ...]。保留撇号缩约（如 don't）。"""
-    tokens = re.findall(r"(\w+(?:'\w+)?)([^\w]*)", text)
-    return tokens
+    """分词：返回 [(单词, 分隔符), ...]。数字自动展开为英文单词。"""
+    raw = re.findall(r"(\w+(?:'\w+)?)([^\w]*)", text)
+    result: list[tuple[str, str]] = []
+    for word, sep in raw:
+        parts = _expand_number(word).split()
+        for i, part in enumerate(parts):
+            # 只有最后一个子词保留原始分隔符
+            result.append((part, "" if i < len(parts) - 1 else sep))
+    return result
+
+
+def _expand_number(word: str) -> str:
+    """将数字串转为英文单词。'12' → 'twelve', '3rd' → 'third'。非数字原样返回。"""
+    try:
+        from num2words import num2words
+    except ImportError:
+        return word
+
+    # 序数词：1st, 2nd, 3rd, 11th ...
+    m = re.match(r'^(\d+)(st|nd|rd|th)$', word)
+    if m:
+        try:
+            return num2words(int(m.group(1)), to='ordinal')
+        except Exception:
+            return word
+
+    # 纯数字
+    if word.isdigit() and len(word) <= 12:
+        try:
+            result = num2words(int(word))
+            # 清除逗号、连接符、"and"，拆成独立单词
+            result = result.replace(',', '').replace('-', ' ').replace(' and ', ' ')
+            return result
+        except Exception:
+            return word
+
+    return word
 
 
 def _normalize(word: str) -> str:
-    """归一化：小写 + 去两端空白。"""
-    return word.strip().lower()
+    """归一化：小写 + 去两端空白 + 数字展开。"""
+    return _expand_number(word.strip().lower())
 
 
 def _get_clip(word: str) -> AudioSegment | None:
