@@ -1,4 +1,5 @@
-"""Quick test: type a sentence and hear Machine-style speech.
+"""快速测试：输入句子，听 Machine 风格语音。
+Quick test: type a sentence and hear Machine-style speech.
 
 Usage:  python test_speak.py "can you hear me"
         python test_speak.py "i will find you" --save test.wav

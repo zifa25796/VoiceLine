@@ -1,4 +1,5 @@
-"""MCP server exposing VoiceLine as a tool for AI assistants.
+"""MCP 服务器：将 VoiceLine 以 tool 形式暴露给 AI 助手。
+MCP server exposing VoiceLine as a tool for AI assistants.
 
 Usage (add to your MCP client config):
   {
@@ -10,10 +11,10 @@ Usage (add to your MCP client config):
     }
   }
 
-Tools exposed:
-  - voice_speak: Convert text to Machine-style speech (returns .wav path)
-  - voice_stats: Show word library coverage stats
-  - voice_missing: List common words not yet in the library
+Tools:
+  - voice_speak:   文字 → Machine 语音，直接播放
+  - voice_stats:   词库覆盖统计
+  - voice_missing: 列出词库未覆盖的常用词
 """
 
 import sys
@@ -30,8 +31,10 @@ vl = VoiceLine()
 
 
 def handle_request(request: dict) -> dict | None:
+    """处理 JSON-RPC 请求：initialize / tools/list / tools/call。"""
     method = request.get("method", "")
 
+    # ── 握手 Handshake ──────────────────────────────────────────
     if method == "initialize":
         return {
             "jsonrpc": "2.0",
@@ -49,6 +52,7 @@ def handle_request(request: dict) -> dict | None:
     if method == "notifications/initialized":
         return None
 
+    # ── 工具列表 Tool listing ────────────────────────────────────
     if method == "tools/list":
         return {
             "jsonrpc": "2.0",
@@ -94,6 +98,7 @@ def handle_request(request: dict) -> dict | None:
             },
         }
 
+    # ── 工具调用 Tool execution ────────────────────────────────
     if method == "tools/call":
         params = request.get("params", {})
         tool_name = params.get("name", "")
@@ -105,7 +110,7 @@ def handle_request(request: dict) -> dict | None:
                 return {"jsonrpc": "2.0", "id": request["id"],
                         "result": {"content": [{"type": "text", "text": "Error: text is required"}]}}
 
-            vl.speak(text)  # play directly, no file output
+            vl.speak(text)  # 直接播放，不返回文件路径
 
             return {
                 "jsonrpc": "2.0",
@@ -143,6 +148,7 @@ def handle_request(request: dict) -> dict | None:
 
 
 def main():
+    """MCP 主循环：从 stdin 读 JSON-RPC 请求，处理后写回 stdout。"""
     # Read JSON-RPC messages from stdin, write to stdout
     buffer = ""
     while True:

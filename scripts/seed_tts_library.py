@@ -1,14 +1,8 @@
-"""Pre-generate a clean word library using multiple edge-tts voices.
-
-Each word is TTS-synthesized in 3 different voices, producing clips with
-perfect boundaries and clear pronunciation. Then Machine-style effects
-(slowdown, EQ, transitions) are applied at playback.
-
-This is a fast way to bootstrap a working library. Real recordings
-can be added later via `voice-line index` to replace/enrich specific words.
+"""批量预生成词库：用多个 edge-tts 语音为常用词各生成 3 条录音。
+Pre-generate a clean word library using multiple edge-tts voices.
 
 Usage:  python scripts/seed_tts_library.py
-        python scripts/seed_tts_library.py --top 500  # first 500 common words
+        python scripts/seed_tts_library.py --top 500
 """
 
 from __future__ import annotations
@@ -26,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from pydub import AudioSegment
 from voice_line import db, frequency
 
-# Multiple edge-tts English voices for variety
+# 14 种 edge-tts 英语语音，用于丰富音色
 VOICES = [
     "en-US-AvaMultilingualNeural",
     "en-US-AndrewMultilingualNeural",
@@ -44,11 +38,11 @@ VOICES = [
     "en-US-SteffanNeural",
 ]
 
-DEFAULT_TOP = 300  # how many common words to pre-generate
+DEFAULT_TOP = 300  # 默认生成前 300 个高频词
 
 
 def _trim_silence(audio: AudioSegment) -> AudioSegment:
-    """Strip leading/trailing silence, leaving a 30ms edge."""
+    """用能量阈值切除首尾静音，保留 30ms 边缘。"""
     import numpy as np
     samples = np.array(audio.get_array_of_samples(), dtype=np.float64)
     if len(samples) < 100:
@@ -68,12 +62,12 @@ def _trim_silence(audio: AudioSegment) -> AudioSegment:
     end = min(len(samples), last + pad_samples)
     if end <= start:
         return audio
-    # Convert sample indices to milliseconds for pydub slicing
+    # pydub 切片用毫秒，需要从采样点索引换算
     return audio[int(start * 1000 / sr):int(end * 1000 / sr)]
 
 
 async def generate_word(word: str, voice: str, output_path: str, retries: int = 3) -> bool:
-    """Use edge-tts to synthesize a single word, with retry on rate-limit."""
+    """TTS 合成单个词并导出。遇到限流自动重试。"""
     import edge_tts
 
     for attempt in range(retries):
@@ -101,7 +95,7 @@ async def generate_word(word: str, voice: str, output_path: str, retries: int = 
 
 
 async def main_async(top_n: int):
-    vl = None  # will init after imports
+    vl = None
     from voice_line import VoiceLine
     vl = VoiceLine()
 
@@ -116,7 +110,7 @@ async def main_async(top_n: int):
         if db.word_is_full(word):
             continue
 
-        # Pick 3 random voices for this word
+        # 每个词随机选 3 种不同语音
         chosen = random.sample(VOICES, min(3, len(VOICES)))
         for voice in chosen:
             clip_hash = hashlib.sha1(
@@ -124,14 +118,14 @@ async def main_async(top_n: int):
             ).hexdigest()[:12]
             clip_path = db.make_clip_path(word, clip_hash)
 
-            await asyncio.sleep(0.3)  # rate-limit: don't hammer Microsoft
+            await asyncio.sleep(0.3)  # 限流保护：不连续请求微软接口
             success = await generate_word(word, voice, clip_path)
             if success:
                 db.add_word(
                     word_text=word, original_text=word,
                     file_path=clip_path, source_audio=f"tts:{voice}",
                     start_time=0, end_time=0, duration=0,
-                    confidence=1.0, quality_score=1.0,  # TTS = perfect quality
+                    confidence=1.0, quality_score=1.0,  # TTS 质量最高
                 )
                 done += 1
 

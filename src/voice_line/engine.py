@@ -1,3 +1,6 @@
+"""VoiceLine 主入口：组装、播放、分析。
+Main API: assemble speech, playback, and library analysis."""
+
 from __future__ import annotations
 
 import sys
@@ -8,16 +11,17 @@ from .analyzer import missing_words, coverage_stats, suggest_targets
 
 
 class VoiceLine:
-    """Person of Interest — The Machine style speech assembler."""
+    """疑犯追踪「机器」风格语音合成器。"""
 
     def __init__(self):
         db.init_db()
+        db.ensure_word_summary_view()
 
-    # ── Speaking ──────────────────────────────────────────────
+    # ── 语音合成 Speaking ────────────────────────────────────
 
     def speak(self, text: str, output: str | None = None) -> None:
-        """Assemble text into Machine-style speech. Missing words are
-        auto-generated via TTS and saved to the library."""
+        """将文本合成为 Machine 风格语音并播放或保存。
+        缺失的词自动 TTS 生成并入库。"""
         audio = assemble(text)
 
         if output:
@@ -29,7 +33,7 @@ class VoiceLine:
     def speak_to_file(self, text: str, output_path: str) -> None:
         assemble_to_file(text, output_path)
 
-    # ── Analysis ──────────────────────────────────────────────
+    # ── 词库分析 Analysis ─────────────────────────────────────
 
     def missing(self, top: int = 20) -> list[tuple[int, str]]:
         return missing_words(top)
@@ -43,10 +47,16 @@ class VoiceLine:
     def db_stats(self) -> dict:
         return db.get_stats()
 
-    # ── Playback ──────────────────────────────────────────────
+    def list_words(self, search: str = "", limit: int = 50,
+                   offset: int = 0, sort_by: str = "word_text") -> tuple[list[dict], int]:
+        return db.list_words(search=search, offset=offset, limit=limit, sort_by=sort_by)
+
+    # ── 播放 Playback ─────────────────────────────────────────
 
     @staticmethod
     def _play(audio) -> None:
+        """将 AudioSegment 写入临时文件，通过 PowerShell Media.SoundPlayer 播放。
+        PlaySync 在没有消息泵的环境（MCP）中不可靠，故用 Play + Start-Sleep。"""
         import tempfile
         import subprocess
         import os
@@ -56,7 +66,7 @@ class VoiceLine:
         tmp.close()
         try:
             audio.export(tmp_path, format="wav")
-            duration_sec = len(audio) / 1000 + 1.5  # buffer
+            duration_sec = len(audio) / 1000 + 1.5  # 留缓冲避免提前截断
             ps = (
                 f"$p = New-Object Media.SoundPlayer '{tmp_path}';"
                 f"$p.Play();"

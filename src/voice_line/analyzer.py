@@ -1,10 +1,12 @@
+"""词库覆盖率分析：缺失词检测、统计、建议。
+Library coverage analysis: missing words, stats, recommendations."""
+
 from . import db
 from .frequency import FREQUENCY_LIST
 
 
 def missing_words(top: int = 20) -> list[tuple[int, str]]:
-    """
-    Return the top N most common English words that are missing from the library.
+    """返回词库中缺失的前 N 个最常用词。
 
     Returns:
         List of (frequency_rank, word) tuples, sorted by frequency (most common first).
@@ -20,9 +22,7 @@ def missing_words(top: int = 20) -> list[tuple[int, str]]:
 
 
 def coverage_stats() -> dict:
-    """
-    Return coverage statistics for the frequency list.
-    """
+    """返回常用词覆盖统计：总数、已覆盖、缺失、百分比。"""
     existing = set(db.get_all_words())
     total_freq = len(FREQUENCY_LIST)
     covered = sum(1 for w in FREQUENCY_LIST if w in existing)
@@ -35,7 +35,7 @@ def coverage_stats() -> dict:
 
 
 def suggest_targets(top: int = 20) -> str:
-    """Pretty-print suggestions for which words to target next."""
+    """生成可读的缺失词建议报告。"""
     missing = missing_words(top)
     stats = coverage_stats()
     lines = [
