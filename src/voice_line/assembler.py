@@ -6,7 +6,7 @@ from pydub import AudioSegment
 
 from . import db
 from .effects import process_word_clip, create_transition
-from .config import SAMPLE_RATE, SAMPLE_WIDTH, CHANNELS, EFFECTS, INTRO_PATH, INTRO_VOLUME_DB
+from .config import SAMPLE_RATE, SAMPLE_WIDTH, CHANNELS, EFFECTS, INTRO_PATH, INTRO_VOLUME_DB, OUTRO_ENABLED
 
 
 def _tokenize(text: str) -> list[tuple[str, str]]:
@@ -79,7 +79,7 @@ def assemble(text: str) -> AudioSegment:
         sfx = sfx.set_frame_rate(SAMPLE_RATE).set_channels(CHANNELS).set_sample_width(SAMPLE_WIDTH)
         sfx = sfx + INTRO_VOLUME_DB
         gap = AudioSegment.silent(duration=60, frame_rate=SAMPLE_RATE)
-        if word_count >= 4:
+        if word_count >= 4 and OUTRO_ENABLED:
             return sfx + gap + body + gap + sfx
         else:
             return sfx + gap + body

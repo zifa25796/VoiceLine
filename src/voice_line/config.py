@@ -23,6 +23,7 @@ SAMPLE_RATE = 22050
 SAMPLE_WIDTH = 2
 CHANNELS = 1
 
-# Intro sound prepended to every speech output
+# Machine intro/outro sound
 INTRO_PATH = os.path.join(DATA_DIR, "assets", "machine_intro.wav")
-INTRO_VOLUME_DB = -10  # attenuation to match TTS loudness
+INTRO_VOLUME_DB = -10    # attenuation to match TTS loudness
+OUTRO_ENABLED = True      # add outro SFX for sentences (4+ words)

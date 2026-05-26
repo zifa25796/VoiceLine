@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "voice-line": {
+      "command": "C:/Users/zeke/AppData/Local/Programs/Python/Python310/python.exe",
+      "args": ["C:/Root/CS/Python/POI/VoiceLine/mcp_server.py"],
+      "env": {}
+    }
+  }
+}
