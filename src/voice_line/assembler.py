@@ -68,8 +68,14 @@ def _prewarm(words: list[str]) -> None:
         return
 
     print(f"  Prewarm: generating {len(missing)} missing word(s)...", file=sys.stderr)
+    delay = 0.0
     for w in sorted(missing):
-        ensure_word(w)
+        if delay > 0:
+            import time
+            time.sleep(delay)
+        result = ensure_word(w)
+        # 成功后 0.8s 间隔，失败后累加退避（上限 3s），避免连续触发限流
+        delay = 0.8 if result is not None else min(delay + 1.2, 3.0)
 
 
 def assemble(text: str) -> AudioSegment:
