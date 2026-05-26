@@ -77,18 +77,16 @@ def _generate_sync(word: str, voices: list[str]) -> AudioSegment | None:
         finally:
             os.unlink(tmp_path)
 
+    import concurrent.futures
     for i, voice in enumerate(voices):
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as pool:
-                    future = pool.submit(lambda v=voice: asyncio.run(_gen(v)))
-                    return future.result(timeout=8)
-            return asyncio.run(_gen(voice))
+            # 始终在独立线程中跑 asyncio.run()，避免与 uvicorn 等已有
+            # 事件循环冲突——asyncio.run() 不能从运行中的事件循环调用。
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(lambda v=voice: asyncio.run(_gen(v)))
+                return future.result(timeout=10)
         except Exception:
             if i < len(voices) - 1:
-                # 每次退避更久：2s → 4s → 8s
                 delay = 2.0 * (i + 1)
                 time.sleep(delay)
     return None
