@@ -6,6 +6,7 @@ from __future__ import annotations
 import re
 import random
 import sys
+import time
 from pathlib import Path
 
 from pydub import AudioSegment
@@ -46,36 +47,40 @@ def _get_clip(word: str) -> AudioSegment | None:
 
 
 def _prewarm(words: list[str]) -> None:
-    """前置预热：提前把词库缺失的词批量 TTS 生成，避免组装时产生静默间隙。"""
-    from .tts_fallback import ensure_word, word_failed
+    """前置预热：提前把词库缺失的词批量 TTS 生成。
+    两轮尝试：第一轮逐个生成，失败的第二轮换语音重试，宁慢勿跳。"""
+    from .tts_fallback import ensure_word
 
     missing = set()
-    skipped = set()
     for w in words:
         normalized = _normalize(w)
-        if not normalized:
-            continue
-        if not db.get_clips(normalized):
-            if word_failed(normalized):
-                skipped.add(normalized)
-            else:
-                missing.add(normalized)
-
-    if skipped:
-        print(f"  Prewarm: {len(skipped)} word(s) already failed — skipping", file=sys.stderr)
+        if normalized and not db.get_clips(normalized):
+            missing.add(normalized)
 
     if not missing:
         return
 
     print(f"  Prewarm: generating {len(missing)} missing word(s)...", file=sys.stderr)
-    delay = 0.0
+
+    # ── 第一轮：逐个尝试，词间 1s 间隔 ──────────────────────
+    failed: list[str] = []
+    first = True
     for w in sorted(missing):
-        if delay > 0:
-            import time
-            time.sleep(delay)
+        if not first:
+            time.sleep(1.0)
+        first = False
         result = ensure_word(w)
-        # 成功后 0.8s 间隔，失败后累加退避（上限 3s），避免连续触发限流
-        delay = 0.8 if result is not None else min(delay + 1.2, 3.0)
+        if result is None:
+            failed.append(w)
+
+    # ── 第二轮：等 5s 后换语音重试失败的词 ──────────────────
+    if failed:
+        import random
+        print(f"  Retrying {len(failed)} failed word(s) after cooldown...", file=sys.stderr)
+        time.sleep(5.0)
+        for w in failed:
+            time.sleep(1.5)
+            ensure_word(w)
 
 
 def assemble(text: str) -> AudioSegment:
