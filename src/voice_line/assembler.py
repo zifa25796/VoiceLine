@@ -42,11 +42,27 @@ def _get_clip(word: str) -> AudioSegment | None:
     return None
 
 
+def _prewarm(words: list[str]) -> None:
+    """Generate any missing words before assembly so no gaps in speech."""
+    from .tts_fallback import ensure_word
+    missing = set()
+    for w in words:
+        normalized = _normalize(w)
+        if normalized and not db.get_clips(normalized):
+            missing.add(normalized)
+    for w in missing:
+        ensure_word(w)
+
+
 def assemble(text: str) -> AudioSegment:
-    """Build Machine-style audio from text. Missing words are TTS-generated on the fly."""
+    """Build Machine-style audio from text. Missing words are pre-generated."""
     tokens = _tokenize(text)
     if not tokens:
         return AudioSegment.silent(duration=100, frame_rate=SAMPLE_RATE)
+
+    # Pre-generate any missing words
+    raw_words = [t[0] for t in tokens]
+    _prewarm(raw_words)
 
     segments: list[AudioSegment] = []
 
