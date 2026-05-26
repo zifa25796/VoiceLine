@@ -105,19 +105,14 @@ def handle_request(request: dict) -> dict | None:
                 return {"jsonrpc": "2.0", "id": request["id"],
                         "result": {"content": [{"type": "text", "text": "Error: text is required"}]}}
 
-            # Generate to a temp file that survives the call
-            output_dir = Path(__file__).parent / "data" / "mcp_output"
-            output_dir.mkdir(parents=True, exist_ok=True)
-            safe_name = "".join(c if c.isalnum() or c in " _-" else "_" for c in text)[:40]
-            output_path = output_dir / f"{safe_name}.wav"
-            vl.speak(text, output=str(output_path))
+            vl.speak(text)  # play directly, no file output
 
             return {
                 "jsonrpc": "2.0",
                 "id": request["id"],
                 "result": {
                     "content": [
-                        {"type": "text", "text": str(output_path)},
+                        {"type": "text", "text": "ok"},
                     ],
                 },
             }

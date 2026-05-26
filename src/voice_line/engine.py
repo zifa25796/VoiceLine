@@ -56,13 +56,18 @@ class VoiceLine:
         tmp.close()
         try:
             audio.export(tmp_path, format="wav")
+            duration_sec = len(audio) / 1000 + 1.5  # buffer
             ps = (
-                f"(New-Object Media.SoundPlayer '{tmp_path}').PlaySync();"
+                f"$p = New-Object Media.SoundPlayer '{tmp_path}';"
+                f"$p.Play();"
+                f"Start-Sleep -Seconds {duration_sec:.1f};"
+                f"$p.Stop();"
+                f"$p.Dispose();"
                 f"Remove-Item '{tmp_path}'"
             )
             subprocess.run(
                 ["powershell", "-Command", ps],
-                capture_output=True, timeout=30,
+                capture_output=True, timeout=int(duration_sec + 10),
             )
         except Exception:
             pass
