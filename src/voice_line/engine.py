@@ -56,7 +56,6 @@ class VoiceLine:
         tmp.close()
         try:
             audio.export(tmp_path, format="wav")
-            # Use PowerShell Media.SoundPlayer to play (works headless)
             ps = (
                 f"(New-Object Media.SoundPlayer '{tmp_path}').PlaySync();"
                 f"Remove-Item '{tmp_path}'"
