@@ -32,16 +32,18 @@ def init_db() -> None:
             duration      REAL,
             confidence    REAL,                     -- STT 置信度（TTS 固定 1.0）
             quality_score REAL    DEFAULT 0.5,       -- 质量评分，越高优先使用
+            play_count    INTEGER DEFAULT 0,         -- 播放次数，超过阈值触发重新生成
             created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         CREATE INDEX IF NOT EXISTS idx_words_text ON words(word_text);
     """)
     conn.commit()
-    # 兼容旧库：为没有 quality_score 列的表添加该列
-    try:
-        conn.execute("ALTER TABLE words ADD COLUMN quality_score REAL DEFAULT 0.5")
-    except sqlite3.OperationalError:
-        pass
+    # 兼容旧库：为没有 quality_score / play_count 列的表添加列
+    for col in ("quality_score REAL DEFAULT 0.5", "play_count INTEGER DEFAULT 0"):
+        try:
+            conn.execute(f"ALTER TABLE words ADD COLUMN {col}")
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     conn.close()
 
@@ -75,12 +77,13 @@ def add_word(word_text: str, original_text: str, file_path: str,
     """插入一条词录音记录。若该词已达上限则返回 None。"""
     if word_is_full(word_text):
         return None
+    rel_path = os.path.relpath(file_path, CLIPS_DIR)
     conn = get_connection()
     cur = conn.execute(
         """INSERT INTO words (word_text, original_text, file_path, source_audio,
            start_time, end_time, duration, confidence, quality_score)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (word_text, original_text, file_path, source_audio,
+        (word_text, original_text, rel_path, source_audio,
          start_time, end_time, duration, confidence, quality_score)
     )
     conn.commit()
@@ -90,7 +93,7 @@ def add_word(word_text: str, original_text: str, file_path: str,
 
 
 def get_clips(word_text: str) -> list[dict]:
-    """获取某个词的所有录音，按质量排序后随机打散。"""
+    """获取某个词的所有录音，按质量排序后随机打散。返回绝对路径。"""
     conn = get_connection()
     rows = conn.execute(
         """SELECT * FROM words WHERE word_text = ?
@@ -98,7 +101,50 @@ def get_clips(word_text: str) -> list[dict]:
         (word_text,)
     ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    results = []
+    for r in rows:
+        d = dict(r)
+        fp = d["file_path"]
+        if os.path.isabs(fp):
+            try:
+                rel = os.path.relpath(fp, CLIPS_DIR)
+                if not rel.startswith(".."):
+                    fp = os.path.join(CLIPS_DIR, rel)
+            except ValueError:
+                pass
+        else:
+            fp = os.path.join(CLIPS_DIR, fp)
+        d["file_path"] = fp
+        results.append(d)
+    return results
+
+
+def record_play(clip_id: int) -> None:
+    """累计一条录音的播放次数。"""
+    conn = get_connection()
+    conn.execute("UPDATE words SET play_count = play_count + 1 WHERE id = ?", (clip_id,))
+    conn.commit()
+    conn.close()
+
+
+def replace_clip(clip_id: int, file_path: str, source_audio: str) -> None:
+    """用新合成的录音替换旧剪辑（播放计数清零）。"""
+    rel_path = os.path.relpath(file_path, CLIPS_DIR)
+    conn = get_connection()
+    conn.execute("UPDATE words SET file_path = ?, source_audio = ?, play_count = 0 WHERE id = ?",
+                 (rel_path, source_audio, clip_id))
+    conn.commit()
+    conn.close()
+
+
+def word_sources(word_text: str) -> set[str]:
+    """返回该词已有的来源标记（如 tts:en-US-AvaMultilingualNeural）。"""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT DISTINCT source_audio FROM words WHERE word_text = ?", (word_text,)
+    ).fetchall()
+    conn.close()
+    return {r["source_audio"] for r in rows if r["source_audio"]}
 
 
 def get_all_words() -> list[str]:

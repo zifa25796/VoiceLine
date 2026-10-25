@@ -23,4 +23,7 @@ voice-line = "voice_line.cli:main"
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages]
-find = {where = ["src"]}
+find = {where = ["src"], include = ["voice_line*"], namespaces = false}
+
+[tool.setuptools.package-data]
+voice_line = ["assets/*.wav"]

@@ -1,4 +1,4 @@
-"""批量预生成词库：用多个 edge-tts 语音为常用词各生成 3 条录音。
+"""批量预生成词库：用多个 edge-tts 语音为常用词各生成 5 条录音。
 Pre-generate a clean word library using multiple edge-tts voices.
 
 Usage:  python scripts/seed_tts_library.py
@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from pydub import AudioSegment
 from voice_line import db, frequency
+from voice_line.config import MAX_CLIPS_PER_WORD
 
 # 14 种 edge-tts 英语语音，用于丰富音色
 VOICES = [
@@ -100,18 +101,22 @@ async def main_async(top_n: int):
     vl = VoiceLine()
 
     words = frequency.FREQUENCY_LIST[:top_n]
-    total = len(words) * min(3, len(VOICES))
     done = 0
 
-    print(f"Generating {len(words)} words x up to 3 voices each...")
+    print(f"Generating {len(words)} words x up to {MAX_CLIPS_PER_WORD} voices each...")
     print(f"Voices: {len(VOICES)} different edge-tts voices\n")
 
     for i, word in enumerate(words):
         if db.word_is_full(word):
             continue
 
-        # 每个词随机选 3 种不同语音
-        chosen = random.sample(VOICES, min(3, len(VOICES)))
+        # 每个词补足到 MAX_CLIPS_PER_WORD 种语音；重跑时跳过已有语音，避免重复
+        used_sources = db.word_sources(word)
+        available = [v for v in VOICES if f"tts:{v}" not in used_sources]
+        needed = min(MAX_CLIPS_PER_WORD - len(used_sources), len(available))
+        if needed <= 0:
+            continue
+        chosen = random.sample(available, needed)
         for voice in chosen:
             clip_hash = hashlib.sha1(
                 f"tts:{word}:{voice}".encode()

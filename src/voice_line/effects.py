@@ -9,7 +9,7 @@ from .config import EFFECTS, SAMPLE_RATE
 
 
 def pitch_shift(clip: AudioSegment, semitones: float) -> AudioSegment:
-    """移调（变音高不变时长），± semitones。"""
+    """通过采样率移调，同时改变时长，± semitones。"""
     if abs(semitones) < 0.1:
         return clip
     rate = clip.frame_rate
@@ -127,10 +127,9 @@ def create_transition() -> AudioSegment:
         parts.append(generate_pop(dur, random.uniform(vhi - 4, vhi + 2)))
 
     silence_ms = random.randint(EFFECTS["gap_ms"][0], EFFECTS["gap_ms"][1])
-    parts.append(AudioSegment.silent(duration=silence_ms))
 
     # 将所有音效叠加（同时发声）
-    result = parts[0]
-    for p in parts[1:]:
+    result = AudioSegment.silent(duration=silence_ms, frame_rate=SAMPLE_RATE)
+    for p in parts:
         result = result.overlay(p)
     return result

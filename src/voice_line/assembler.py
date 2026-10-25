@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import re
 import random
-import sys
+import logging
 import time
 from pathlib import Path
 
@@ -13,7 +13,12 @@ from pydub import AudioSegment
 
 from . import db
 from .effects import process_word_clip, create_transition, generate_static
-from .config import SAMPLE_RATE, SAMPLE_WIDTH, CHANNELS, EFFECTS, INTRO_PATH, INTRO_VOLUME_DB, OUTRO_ENABLED
+from .tts_fallback import ensure_word, schedule_refresh
+from .config import (SAMPLE_RATE, SAMPLE_WIDTH, CHANNELS, EFFECTS, INTRO_PATH,
+                     INTRO_VOLUME_DB, OUTRO_ENABLED, REFRESH_PLAYS_PER_CLIP)
+
+
+logger = logging.getLogger("voice.build")
 
 
 def _tokenize(text: str) -> list[tuple[str, str]]:
@@ -62,7 +67,8 @@ def _normalize(word: str) -> str:
 
 
 def _get_clip(word: str) -> AudioSegment | None:
-    """取一个词的录音→加效果。从词库取，没有则返回 None（prewarm 已尝试 TTS）。"""
+    """取一个词的录音→加效果。从词库取，没有则返回 None（prewarm 已尝试 TTS）。
+    播放次数达到阈值后后台刷新，本次仍使用已缓存录音。"""
     normalized = _normalize(word)
     if not normalized:
         return None
@@ -70,21 +76,22 @@ def _get_clip(word: str) -> AudioSegment | None:
     clips = db.get_clips(normalized)
     if clips:
         chosen = random.choice(clips)
+        db.record_play(chosen["id"])
+        if chosen["play_count"] + 1 >= REFRESH_PLAYS_PER_CLIP:
+            schedule_refresh(normalized, chosen["id"])
         clip_path = Path(chosen["file_path"])
         if clip_path.exists():
             clip = AudioSegment.from_file(str(clip_path))
             return process_word_clip(clip)
 
     # prewarm 已经试过 TTS 且失败了——不再重试，直接跳过
-    print(f"  Skipped: '{word}' (not in library)", file=sys.stderr)
+    logger.debug("Clip unavailable | word=%r", word)
     return None
 
 
 def _prewarm(words: list[str]) -> None:
     """前置预热：提前把词库缺失的词批量 TTS 生成。
-    两轮尝试：第一轮逐个生成，失败的第二轮换语音重试，宁慢勿跳。"""
-    from .tts_fallback import ensure_word
-
+    每词先生成一条，剩余声线后台补齐；失败词冷却后再尝试一次。"""
     missing = set()
     for w in words:
         normalized = _normalize(w)
@@ -94,7 +101,7 @@ def _prewarm(words: list[str]) -> None:
     if not missing:
         return
 
-    print(f"  Prewarm: generating {len(missing)} missing word(s)...", file=sys.stderr)
+    logger.info("Preparing missing words | count=%s", len(missing))
 
     # ── 第一轮：逐个尝试，词间 1s 间隔 ──────────────────────
     failed: list[str] = []
@@ -110,7 +117,7 @@ def _prewarm(words: list[str]) -> None:
     # ── 第二轮：等 5s 后换语音重试失败的词 ──────────────────
     if failed:
         import random
-        print(f"  Retrying {len(failed)} failed word(s) after cooldown...", file=sys.stderr)
+        logger.warning("Retrying missing words after cooldown | count=%s", len(failed))
         time.sleep(5.0)
         for w in failed:
             time.sleep(1.5)
@@ -151,7 +158,7 @@ def assemble(text: str) -> AudioSegment:
 
     if skipped:
         unique = list(dict.fromkeys(skipped))  # 去重但保持顺序
-        print(f"  Missing: {', '.join(unique)}", file=sys.stderr)
+        logger.warning("Speech incomplete; static substituted | missing=%s", ", ".join(unique))
 
     if not segments:
         return AudioSegment.silent(duration=100, frame_rate=SAMPLE_RATE)

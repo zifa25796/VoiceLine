@@ -2,48 +2,76 @@
 
 Person of Interest — The Machine style speech assembler.
 
-Each word is TTS-synthesized in a different voice, then processed with
+Words are selected from randomly chosen TTS voice clips, then processed with
 speed variation, EQ, noise, and channel-switching effects. Words are
 spliced together with static bursts and silence gaps between them —
 producing the signature fragmented voice from the show.
 
-## Install
+## Portable Build (Windows)
+
+Download `VoiceLine.zip`, unzip, run — no install required.
+
+```
+VoiceLine.exe speak "can you hear me"
+VoiceLine.exe speak "hello world" -o output.wav
+VoiceLine.exe stats
+VoiceLine.exe list
+VoiceLine.exe list -s hello
+VoiceLine.exe missing -n 30
+```
+
+| Dependency | Bundled? |
+|---|---|
+| Python 3.10 | Yes, in `_internal/` |
+| ffmpeg | Yes, ffmpeg.exe + DLLs |
+| Pre-generated word clips | Included when supplied with the release, in `_internal/data/` |
+| SQLite word database | Auto-created on first run |
+| Audio playback (sounddevice) | Pure Python, no PowerShell needed |
+| edge-tts (new word generation) | **Requires internet** |
+
+Offline coverage depends on the clips included in your build or local library.
+Use `VoiceLine.exe stats` to inspect it. Missing words require internet and are
+cached after successful generation.
+
+## Install (from source)
 
 ```bash
 git clone https://github.com/zifa25796/VoiceLine.git
 cd VoiceLine
-pip install -e .
-pip install edge-tts
+uv sync
 ```
-
-pydub needs ffmpeg: `winget install ffmpeg` or `brew install ffmpeg`.
 
 ## Quick start
 
 ```bash
 # 1. Seed the word library (~300 common words, ~10 min)
-python scripts/seed_tts_library.py
+uv run python scripts/seed_tts_library.py
 
 # 2. Test
-python test_speak.py "can you hear me"
+uv run python scripts/check_speech.py "can you hear me"
 ```
 
-Missing words are auto-generated on first use and cached to the library.
+Missing words are auto-generated on first use and cached to the library. Playback
+waits for one clip per missing word; additional voices are filled in background.
+Background work stops when the process exits. Partial libraries are not
+automatically topped up by cached-word playback; use the seeding tool to fill them.
 
 ## Usage
 
+VoiceLine's Python API and CLI run independently. The Daily HTTP MCP bridge is maintained by the [POI project](https://github.com/zifa25796/poi-project) in `integrations/mcp_server.py`. Inside a POI checkout, `mcp_server.py` remains a compatibility launcher for existing clients. Start Daily before using that bridge; set `VOICELINE_API_URL` to override `http://127.0.0.1:9000`.
+
 ```bash
 # Quick test
-python test_speak.py "I will find you"
-python test_speak.py "hello world" --save out.wav
+uv run python scripts/check_speech.py "I will find you"
+uv run python scripts/check_speech.py "hello world" --save out.wav
 
 # CLI
-voice-line speak "I will find you"
-voice-line speak -o out.wav "Can you hear me"
+uv run voice-line speak "I will find you"
+uv run voice-line speak -o out.wav "Can you hear me"
 
 # Library
-voice-line stats              # coverage summary
-voice-line missing -n 20      # top 20 words not yet cached
+uv run voice-line stats              # coverage summary
+uv run voice-line missing -n 20      # top 20 words not yet cached
 ```
 
 ## How it works
@@ -66,10 +94,13 @@ voice-line missing -n 20      # top 20 words not yet cached
                 ↑ always                         ↑ only for ≥4 words
 ```
 
-- **Library**: each word gets up to 3 TTS clips in different edge-tts voices.
+- **Library**: each word gets up to 5 TTS clips in different edge-tts voices.
+- **Refresh**: a clip is regenerated in background with a new voice after being played 3 times,
+  so frequently repeated words (e.g. a daily "low battery" alert) keep sounding fresh.
+  The current request uses the cached clip without waiting for the refresh.
 - **Effects per word**: speed variation, phone/radio/clean EQ, low noise floor, volume jitter, fade in/out.
 - **Transitions**: silence gaps (160–350ms) + random static bursts between words.
-- **Intro/outro**: The Machine SFX (`data/assets/machine_intro.wav`) plays at start of every output; appended at end for sentences of 4+ words.
+- **Intro/outro**: The Machine SFX (`src/voice_line/assets/machine_intro.wav`, with a legacy `data/assets/` fallback) plays at start of every output; appended at end for sentences of 4+ words.
 
 ## Configuration
 
@@ -84,8 +115,10 @@ All settings in `src/voice_line/config.py`:
 | `noise_floor_db` | `-32` | Background noise under each word (`-40`=subtle, `-20`=obvious) |
 | `volume_db` | `2.0` | Random volume variation ±dB |
 | `eq_modes` | `["radio", "phone", "clean"]` | EQ randomly chosen per word |
-| `MAX_CLIPS_PER_WORD` | `3` | Max clips stored per word |
-| `INTRO_VOLUME_DB` | `-8` | Intro SFX attenuation (more negative = quieter) |
+| `MAX_CLIPS_PER_WORD` | `5` | Max clips stored per word |
+| `REFRESH_PLAYS_PER_CLIP` | `3` | Regenerate a clip after this many plays |
+| `REFRESH_RETRY_SECONDS` | `300` | Min cooldown before retrying a failed refresh |
+| `INTRO_VOLUME_DB` | `-10` | Intro SFX attenuation (more negative = quieter) |
 
 ## Expanding the library
 
@@ -99,33 +132,37 @@ copy data\voice_line.db backups\voice_line_v2.db
 
 ## Project structure
 
-```
+```text
 VoiceLine/
-├── test_speak.py              # Quick test script
-├── src/voice_line/            # Python package
-│   ├── engine.py              # Main API
-│   ├── assembler.py           # Text → assembled audio
-│   ├── tts_fallback.py        # On-the-fly TTS for missing words
-│   ├── effects.py             # Audio effects (speed, EQ, noise, transitions)
-│   ├── db.py                  # SQLite word library
-│   ├── config.py              # All tunable settings
-│   ├── analyzer.py            # Coverage analysis
-│   ├── frequency.py           # Common word frequency list
-│   └── cli.py                 # CLI entry point
-├── scripts/
-│   └── seed_tts_library.py    # Pre-generate TTS word library
-├── data/                      # Clips + DB + SFX (gitignored)
-│   └── assets/
-│       └── machine_intro.wav  # Machine intro sound effect
-├── backups/                   # DB backups (gitignored)
+├── src/voice_line/       Speech package
+│   └── assets/           Packaged machine_intro.wav
+├── scripts/             Seeding tools and check_speech.py manual demo
+├── tests/               Automated speech pipeline tests
+├── archive/             Unsupported historical experiments
+├── data/                Generated clips and SQLite database (ignored)
+├── backups/             Local backups (ignored)
+├── mcp_server.py         Compatibility launcher for POI's Daily bridge
+├── VoiceLine.spec        Portable build definition
 ├── pyproject.toml
-├── setup.py
-└── requirements.txt
+└── uv.lock
 ```
+
+The intro sound is packaged separately from generated data. `VOICELINE_DATA_DIR` overrides the database and clip directory; the existing repository `data/` directory remains the default. Back up the database together with its clips. Existing database entries may contain absolute paths.
+
+Run automated checks from this repository with `uv run python -m unittest discover -s tests -v`. Inside POI, run `uv run python -m unittest discover -s VoiceLine/tests -v` from the POI root.
 
 ## Requirements
 
-- Python ≥ 3.9
+- Python ≥ 3.9 (Python 3.10+ for the POI companion)
 - pydub + ffmpeg (system-level, for audio I/O)
 - edge-tts (free, no API key required)
 - numpy, sounddevice
+
+## Runtime logs
+
+Logs go to stderr; CLI result tables stay on stdout. Interactive terminals color
+SPEECH green, TTS and BUILD blue. Events and important field values are also
+highlighted. Warnings are yellow, errors red. Set `NO_COLOR` to disable color;
+redirected output is plain text. `Completed` measures assembly plus playback or
+export, while `audio` is the generated audio duration. Refreshes happen in
+background; a successful request may still report missing words replaced by static.
